@@ -465,6 +465,83 @@ Log1pApproximation::matchAndRewrite(math::Log1pOp op,
 }
 
 //----------------------------------------------------------------------------//
+// Erf approximation.
+//----------------------------------------------------------------------------//
+
+namespace {
+
+struct ErfApproximation : public OpRewritePattern<math::ErfOp> {
+public:
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(math::ErfOp op,
+                                PatternRewriter &rewriter) const final;
+};
+} // namespace
+
+// See:
+// Abramowitz and Stegun
+// Handbook of Mathematical Functions with Formulas, Graphs, and Mathematical
+// Tables (1964)
+// 7.1.28
+// erf x = 1 - 1/(1 + a1*x + a2*x^2 + a3*x^3 + a4*x^4 + a5*x^5 + a6*x^6)^16
+// for x >= 0
+LogicalResult
+ErfApproximation::matchAndRewrite(math::ErfOp op,
+                                  PatternRewriter &rewriter) const {
+  auto width = vectorWidth(op.operand().getType(), isF32);
+  if (!width.hasValue())
+    return rewriter.notifyMatchFailure(op, "unsupported operand type");
+
+  ImplicitLocOpBuilder builder(op->getLoc(), rewriter);
+  auto bcast = [&](Value value) -> Value {
+    return broadcast(builder, value, *width);
+  };
+
+  auto fmla = [&](Value a, Value b, Value c) {
+    return builder.create<math::FmaOp>(a, b, c);
+  };
+  auto mul = [&](Value a, Value b) -> Value {
+    return builder.create<arith::MulFOp>(a, b);
+  };
+
+  Value zero = bcast(f32Cst(builder, 0));
+  Value one = bcast(f32Cst(builder, 1));
+  Value a1 = bcast(f32Cst(builder, 0.0705230784));
+  Value a2 = bcast(f32Cst(builder, 0.0422820123));
+  Value a3 = bcast(f32Cst(builder, 0.0092705272));
+  Value a4 = bcast(f32Cst(builder, 0.0001520143));
+  Value a5 = bcast(f32Cst(builder, 0.0002765672));
+  Value a6 = bcast(f32Cst(builder, 0.0000430638));
+
+  Value isNegativeArg = builder.create<arith::CmpFOp>(arith::CmpFPredicate::OLT,
+                                                      op.operand(), zero);
+  Value negArg = builder.create<arith::NegFOp>(op.operand());
+  Value x = builder.create<SelectOp>(isNegativeArg, negArg, op.operand());
+
+  Value poly1 = fmla(a6, x, a5);
+  Value poly2 = fmla(poly1, x, a4);
+  Value poly3 = fmla(poly2, x, a3);
+  Value poly4 = fmla(poly3, x, a2);
+  Value poly5 = fmla(poly4, x, a1);
+  Value poly = fmla(poly5, x, one);
+  Value polyPow2 = mul(poly, poly);
+  Value polyPow4 = mul(polyPow2, polyPow2);
+  Value polyPow8 = mul(polyPow4, polyPow4);
+  Value polyPow16 = mul(polyPow8, polyPow8);
+
+  Value oneDivPoly = builder.create<arith::DivFOp>(one, polyPow16);
+  Value formula = builder.create<arith::SubFOp>(one, oneDivPoly);
+  Value negFormula = builder.create<arith::NegFOp>(formula);
+
+  // Erf is odd function: -erf(x) = -erf(-x)
+  Value res = builder.create<SelectOp>(isNegativeArg, negFormula, formula);
+  rewriter.replaceOp(op, res);
+
+  return success();
+}
+
+//----------------------------------------------------------------------------//
 // Exp approximation.
 //----------------------------------------------------------------------------//
 
@@ -778,8 +855,8 @@ LogicalResult SinAndCosApproximation<isSine, OpTy>::matchAndRewrite(
 void mlir::populateMathPolynomialApproximationPatterns(
     RewritePatternSet &patterns) {
   patterns.add<TanhApproximation, LogApproximation, Log2Approximation,
-               Log1pApproximation, ExpApproximation, ExpM1Approximation,
-               SinAndCosApproximation<true, math::SinOp>,
+               Log1pApproximation, ErfApproximation, ExpApproximation,
+               ExpM1Approximation, SinAndCosApproximation<true, math::SinOp>,
                SinAndCosApproximation<false, math::CosOp>>(
       patterns.getContext());
 }

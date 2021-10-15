@@ -3,6 +3,53 @@
 // Check that all math functions lowered to approximations built from
 // standard operations (add, mul, fma, shift, etc...).
 
+// CHECK-LABEL: func @erf_scalar(
+// CHECK-SAME:    %[[arg:.*]]: f32) -> f32 {
+// CHECK-DAG:     %[[zero:.*]] = arith.constant 0.000000e+00 : f32
+// CHECK-DAG:     %[[one:.*]] = arith.constant 1.000000e+00 : f32
+// CHECK-DAG:     %[[a1:.*]] = arith.constant 0.0705230758 : f32
+// CHECK-DAG:     %[[a2:.*]] = arith.constant 0.0422820114 : f32
+// CHECK-DAG:     %[[a3:.*]] = arith.constant 0.0092705274 : f32
+// CHECK-DAG:     %[[a4:.*]] = arith.constant 1.52014298E-4 : f32
+// CHECK-DAG:     %[[a5:.*]] = arith.constant 2.76567211E-4 : f32
+// CHECK-DAG:     %[[a6:.*]] = arith.constant 4.306380e-05 : f32
+// CHECK:         %[[isNegativeArg:.*]] = arith.cmpf olt, %[[arg]], %[[zero]] : f32
+// CHECK:         %[[negArg:.*]] = arith.negf %[[arg]] : f32
+// CHECK:         %[[x:.*]] = select %[[isNegativeArg]], %[[negArg]], %[[arg]] : f32
+// CHECK:         %[[poly1:.*]] = math.fma %[[a6]], %[[x]], %[[a5]] : f32
+// CHECK:         %[[poly2:.*]] = math.fma %[[poly1]], %[[x]], %[[a4]] : f32
+// CHECK:         %[[poly3:.*]] = math.fma %[[poly2]], %[[x]], %[[a3]] : f32
+// CHECK:         %[[poly4:.*]] = math.fma %[[poly3]], %[[x]], %[[a2]] : f32
+// CHECK:         %[[poly5:.*]] = math.fma %[[poly4]], %[[x]], %[[a1]] : f32
+// CHECK:         %[[poly:.*]] = math.fma %[[poly5]], %[[x]], %[[one]] : f32
+// CHECK:         %[[polyPow2:.*]] = arith.mulf %[[poly]], %[[poly]] : f32
+// CHECK:         %[[polyPow4:.*]] = arith.mulf %[[polyPow2]], %[[polyPow2]] : f32
+// CHECK:         %[[polyPow8:.*]] = arith.mulf %[[polyPow4]], %[[polyPow4]] : f32
+// CHECK:         %[[polyPow16:.*]] = arith.mulf %[[polyPow8]], %[[polyPow8]] : f32
+// CHECK:         %[[oneDivPoly:.*]] = arith.divf %[[one]], %[[polyPow16]] : f32
+// CHECK:         %[[formula:.*]] = arith.subf %[[one]], %[[oneDivPoly]] : f32
+// CHECK:         %[[negFormula:.*]] = arith.negf %[[formula]] : f32
+// CHECK:         %[[res:.*]] = select %[[isNegativeArg]], %[[negFormula]], %[[formula]] : f32
+// CHECK:         return %[[res]] : f32
+// CHECK:       }
+func @erf_scalar(%arg0: f32) -> f32 {
+  %0 = math.erf %arg0 : f32
+  return %0 : f32
+}
+
+// CHECK-LABEL:   func @erf_vector(
+// CHECK-SAME:                     %[[arg0:.*]]: vector<8xf32>) -> vector<8xf32> {
+// CHECK:           %[[zero:.*]] = arith.constant dense<0.000000e+00> : vector<8xf32>
+// CHECK-NOT:       erf
+// CHECK-COUNT-1:   select
+// CHECK:           %[[res:.*]] = select
+// CHECK:           return %[[res]] : vector<8xf32>
+// CHECK:         }
+func @erf_vector(%arg0: vector<8xf32>) -> vector<8xf32> {
+  %0 = math.erf %arg0 : vector<8xf32>
+  return %0 : vector<8xf32>
+}
+
 // CHECK-LABEL:   func @exp_scalar(
 // CHECK-SAME:                     %[[VAL_0:.*]]: f32) -> f32 {
 // CHECK-DAG:           %[[VAL_1:.*]] = arith.constant 0.693147182 : f32
