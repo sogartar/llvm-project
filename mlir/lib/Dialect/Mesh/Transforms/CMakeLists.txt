@@ -1,4 +1,5 @@
 add_mlir_dialect_library(MLIRMeshTransforms
+  Simplifications.cpp
   ShardingPropagation.cpp
 
   ADDITIONAL_HEADER_DIRS
