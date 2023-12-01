@@ -341,7 +341,8 @@ def Mesh_AllToAllOp : Mesh_CollectiveCommunicationOpBase<"all_to_all", [
 }
 
 def Mesh_BroadcastOp : Mesh_CollectiveCommunicationOpBase<"broadcast", [
-    SameOperandsAndResultShape
+    AllShapesMatch<["input", "result"]>,
+    AllElementTypesMatch<["input", "result"]>
   ]> {
   let summary = "Broadcast over a device mesh.";
   let description = [{
@@ -357,7 +358,7 @@ def Mesh_BroadcastOp : Mesh_CollectiveCommunicationOpBase<"broadcast", [
     %1 = mesh.broadcast %0 on @mesh0
       mesh_axes = [0]
       root = [0]
-      : tensor <2xi8> -> tensor <2xi8>
+      : (tensor<2xi8>) -> tensor<2xi8>
     ```
     
     Input:
@@ -389,13 +390,13 @@ def Mesh_BroadcastOp : Mesh_CollectiveCommunicationOpBase<"broadcast", [
   let assemblyFormat = [{
     $input `on` $mesh (`mesh_axes` `=` $mesh_axes^)?
     `root` `=` custom<DynamicIndexList>($root_dynamic, $root)
-    attr-dict `:` type($input) `->` type($result)
+    attr-dict `:` functional-type(operands, results)
   }];
 }
 
 def Mesh_GatherOp : Mesh_CollectiveCommunicationOpBase<"gather", [
-    SameOperandsAndResultElementType,
-    SameOperandsAndResultRank
+    AllRanksMatch<["input", "result"]>,
+    AllElementTypesMatch<["input", "result"]>
   ]> {
   let summary = "Gather over a device mesh.";
   let description = [{
@@ -411,7 +412,7 @@ def Mesh_GatherOp : Mesh_CollectiveCommunicationOpBase<"gather", [
     ...
     %1 = mesh.gather %0 on @mesh0 mesh_axes = [1]
       gather_axis = 1 root = [1]
-      : tensor<2x2xi8> -> tensor<2x4xi8>
+      : (tensor<2x2xi8>) -> tensor<2x4xi8>
     ```
     Input:
     ```
@@ -451,13 +452,14 @@ def Mesh_GatherOp : Mesh_CollectiveCommunicationOpBase<"gather", [
     $input `on` $mesh (`mesh_axes` `=` $mesh_axes^)?
     `gather_axis` `=` $gather_axis
     `root` `=` custom<DynamicIndexList>($root_dynamic, $root)
-    attr-dict `:` type($input) `->` type($result)
+    attr-dict `:` functional-type(operands, results)
   }];
 }
 
 def Mesh_ReceiveOp : Mesh_CollectiveCommunicationOpBase<"receive", [
-    SameOperandsAndResultElementType,
-    SameOperandsAndResultShape]> {
+    AllShapesMatch<["input", "result"]>,
+    AllElementTypesMatch<["input", "result"]>
+  ]> {
   let summary = "Send over a device mesh.";
   let description = [{
     Receive from a device within a device group.
@@ -473,12 +475,13 @@ def Mesh_ReceiveOp : Mesh_CollectiveCommunicationOpBase<"receive", [
   let assemblyFormat = [{
     $input `on` $mesh (`mesh_axes` `=` $mesh_axes^)?
     (`source` `=` custom<DynamicIndexList>($source_dynamic, $source)^)?
-    attr-dict `:` type($input) `->` type($result)
+    attr-dict `:` functional-type(operands, results)
   }];
 }
 
 def Mesh_ReduceOp : Mesh_CollectiveCommunicationOpBase<"reduce", [
-    SameOperandsAndResultShape]> {
+    AllShapesMatch<["input", "result"]>
+  ]> {
   let summary = "Reduce over a device mesh.";
   let description = [{
     Reduces on device `root` within each device group.
@@ -496,7 +499,7 @@ def Mesh_ReduceOp : Mesh_CollectiveCommunicationOpBase<"reduce", [
     ```
     %1 = mesh.reduce %0 on @mesh0 mesh_axes = [1, 0]
       reduction = <max> root = [2, 3]
-      : tensor<3x4xf32> -> tensor<3x4xf64>
+      : (tensor<3x4xf32>) -> tensor<3x4xf64>
     ```
   }];
   let arguments = !con(commonArgs, (ins
@@ -512,7 +515,7 @@ def Mesh_ReduceOp : Mesh_CollectiveCommunicationOpBase<"reduce", [
     $input `on` $mesh (`mesh_axes` `=` $mesh_axes^)?
     (`reduction` `=` $reduction^)?
     `root` `=` custom<DynamicIndexList>($root_dynamic, $root)
-    attr-dict `:` type($input) `->` type($result)
+    attr-dict `:` functional-type(operands, results)
   }];
 }
 
@@ -578,8 +581,9 @@ def Mesh_ReduceScatterOp : Mesh_CollectiveCommunicationOpBase<"reduce_scatter", 
 }
 
 def Mesh_ScatterOp : Mesh_CollectiveCommunicationOpBase<"scatter", [
-    SameOperandsAndResultElementType,
-    SameOperandsAndResultRank]> {
+    AllRanksMatch<["input", "result"]>,
+    AllElementTypesMatch<["input", "result"]>
+  ]> {
   let summary = "Scatter over a device mesh.";
   let description = [{
     For each device group split the input tensor on the `root` device along
@@ -591,7 +595,7 @@ def Mesh_ScatterOp : Mesh_CollectiveCommunicationOpBase<"scatter", [
     %1 = mesh.scatter %0 on @mesh0 mesh_axes = [0]
       scatter_axis = 0
       root = [1]
-      : tensor<2x2xi8> -> tensor<1x2xi8>
+      : (tensor<2x2xi8>) -> tensor<1x2xi8>
     ```
 
     Input:
@@ -639,13 +643,14 @@ def Mesh_ScatterOp : Mesh_CollectiveCommunicationOpBase<"scatter", [
     $input `on` $mesh (`mesh_axes` `=` $mesh_axes^)?
     `scatter_axis` `=` $scatter_axis
     `root` `=` custom<DynamicIndexList>($root_dynamic, $root)
-    attr-dict `:` type($input) `->` type($result)
+    attr-dict `:` functional-type(operands, results)
   }];
 }
 
 def Mesh_SendOp : Mesh_CollectiveCommunicationOpBase<"send", [
-    SameOperandsAndResultElementType,
-    SameOperandsAndResultShape]> {
+    AllShapesMatch<["input", "result"]>,
+    AllElementTypesMatch<["input", "result"]>
+  ]> {
   let summary = "Send over a device mesh.";
   let description = [{
     Send from one device to another within a device group.
@@ -661,13 +666,14 @@ def Mesh_SendOp : Mesh_CollectiveCommunicationOpBase<"send", [
   let assemblyFormat = [{
     $input `on` $mesh (`mesh_axes` `=` $mesh_axes^)?
     `destination` `=` custom<DynamicIndexList>($destination_dynamic, $destination)
-    attr-dict `:` type($input) `->` type($result)
+    attr-dict `:` functional-type(operands, results)
   }];
 }
 
 def Mesh_ShiftOp : Mesh_CollectiveCommunicationOpBase<"shift", [
     SameOperandsAndResultElementType,
-    SameOperandsAndResultShape]> {
+    SameOperandsAndResultShape
+  ]> {
   let summary = "Sift over a device mesh.";
   let description = [{
     Within each device group shift along mesh axis `shift_axis` by an offset
@@ -681,9 +687,8 @@ def Mesh_ShiftOp : Mesh_CollectiveCommunicationOpBase<"shift", [
     ```
     mesh.cluster @mesh0(rank = 2, dim_sizes = [2, 4])
     %1 = mesh.shift on @mesh0 mesh_axes = [1]
-      shift_axis = 1
-      offset = 2
-      rotate
+      shift_axis = 1 offset = 2 rotate
+      : tensor<2xi8> -> tensor<2xi8>
     ```
 
     Input:
@@ -710,7 +715,7 @@ def Mesh_ShiftOp : Mesh_CollectiveCommunicationOpBase<"shift", [
   let arguments = !con(commonArgs, (ins
     AnyNon0RankedTensor:$input,
     IndexAttr:$shift_axis,
-    IndexAttr:$offset,
+    I64Attr:$offset,
     UnitAttr:$rotate
   ));
   let results = (outs
