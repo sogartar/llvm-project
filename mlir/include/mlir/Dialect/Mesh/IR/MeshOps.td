@@ -340,6 +340,10 @@ def Mesh_AllReduceOp : Mesh_CollectiveCommunicationOpBase<"all_reduce", [
     attr-dict `:` type($input) `->` type($result)
   }];
   let hasCanonicalizer = 1;
+    let builders = [
+    OpBuilder<(ins "Value":$input, "StringRef":$mesh,
+      "ArrayRef<MeshAxis>":$meshAxes, "ReductionKind":$reduction)>
+  ];
 }
 
 def Mesh_AllSliceOp : Mesh_CollectiveCommunicationOpBase<"all_slice", [
