@@ -21,6 +21,7 @@ add_mlir_dialect_library(MLIRLinalgTransforms
   InlineScalarOperands.cpp
   Interchange.cpp
   Loops.cpp
+  MeshShardingInterfaceImpl.cpp
   NamedOpConversions.cpp
   Padding.cpp
   Promotion.cpp
@@ -67,6 +68,7 @@ add_mlir_dialect_library(MLIRLinalgTransforms
   MLIRSCFTransforms
   MLIRSCFUtils
   MLIRPass
+  MLIRShardingInterface
   MLIRSubsetOpInterface
   MLIRSparseTensorDialect
   MLIRTensorDialect
