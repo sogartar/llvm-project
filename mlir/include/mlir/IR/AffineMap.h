@@ -76,6 +76,14 @@ public:
   static AffineMap getMultiDimIdentityMap(unsigned numDims,
                                           MLIRContext *context);
 
+  /// Returns an subrange of multi-dim identity map.
+  /// Example:
+  /// getMultiDimIdentitySubRangeMap(n, p, q) ->
+  /// affine_map<(d0, ..., dp, ..., dq, ..., dn) -> (dp, dq)>
+  static AffineMap getMultiDimIdentitySubRangeMap(unsigned numDims,
+                                          unsigned rangeBegin, unsigned rangeEnd,
+                                          MLIRContext *context);
+
   /// Returns an identity affine map (d0, ..., dn) -> (dp, ..., dn) on the most
   /// minor dimensions.
   static AffineMap getMinorIdentityMap(unsigned dims, unsigned results,

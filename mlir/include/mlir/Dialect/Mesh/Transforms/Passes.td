@@ -16,7 +16,7 @@ include "mlir/Pass/PassBase.td"
 // ShardingPropagation
 //===----------------------------------------------------------------------===//
 
-def ShardingPropagation : Pass<"sharding-propagation", "mlir::func::FuncOp"> {
+def ShardingPropagation : Pass<"mesh-sharding-propagation", "mlir::func::FuncOp"> {
   let summary = "sharding propagation";
   let description = [{
     Propagates sharding information throughout the graph. After this pass, each

@@ -324,6 +324,17 @@ AffineMap AffineMap::getMultiDimIdentityMap(unsigned numDims,
   return get(/*dimCount=*/numDims, /*symbolCount=*/0, dimExprs, context);
 }
 
+AffineMap AffineMap::getMultiDimIdentitySubRangeMap(unsigned numDims,
+                                          unsigned rangeBegin, unsigned rangeEnd,
+                                          MLIRContext *context) {
+  assert(rangeBegin <= numDims && rangeEnd <= numDims && rangeBegin <= rangeEnd);
+  SmallVector<AffineExpr> dimExprs;
+  dimExprs.reserve(rangeEnd - rangeBegin);
+  for (unsigned i = rangeBegin; i < rangeEnd; ++i)
+    dimExprs.push_back(mlir::getAffineDimExpr(i, context));
+  return get(/*dimCount=*/numDims, /*symbolCount=*/0, dimExprs, context);
+}
+
 MLIRContext *AffineMap::getContext() const { return map->context; }
 
 bool AffineMap::isIdentity() const {

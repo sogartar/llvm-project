@@ -13,6 +13,7 @@
 #include "mlir/Dialect/Mesh/Interfaces/ShardingInterface.h"
 #include "mlir/IR/AffineMap.h"
 #include "mlir/IR/Value.h"
+#include <numeric>
 
 namespace mlir {
 
@@ -68,7 +69,9 @@ struct IndependentParallelIteratorDomainShardingInterface
 
   SmallVector<AffineMap> getIndexingMaps(Operation *op) const {
     // TODO: implement.
-    return SmallVector<AffineMap>();
+    int64_t tensorAxisCount = getTensorAxisCount(op->getOperandTypes()) + getTensorAxisCount(op->getResultTypes());
+    SmallVector<AffineMap> res;
+    return AffineMap::getMultiDimIdentityMap(tensorAxisCount, op->getContext());
   }
 
   LogicalResult spmdize(Operation *op, ArrayRef<Value> spmdizedOperands,

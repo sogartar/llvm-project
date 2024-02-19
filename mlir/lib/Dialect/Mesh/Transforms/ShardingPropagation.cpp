@@ -23,7 +23,7 @@ namespace mesh {
 } // namespace mesh
 } // namespace mlir
 
-#define DEBUG_TYPE "sharding-propagation"
+#define DEBUG_TYPE "mesh-sharding-propagation"
 #define DBGS() (llvm::dbgs() << "[" DEBUG_TYPE << "]: ")
 
 using namespace mlir;

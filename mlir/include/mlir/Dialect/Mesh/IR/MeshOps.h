@@ -12,12 +12,15 @@
 #include "mlir/Bytecode/BytecodeOpInterface.h"
 #include "mlir/Dialect/Utils/StructuredOpsUtils.h"
 #include "mlir/IR/BuiltinTypeInterfaces.h"
+#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/SymbolTable.h"
 #include "mlir/Interfaces/InferTypeOpInterface.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "mlir/Support/MathExtras.h"
+#include "llvm/ADT/STLExtras.h"
+#include <numeric>
 
 namespace mlir {
 namespace mesh {
@@ -127,6 +130,20 @@ ShapedType shardShapedType(ShapedType shape, MeshOp mesh,
 // If not ranked tensor type return `type`.
 // `sharding` in that case must be null.
 Type shardType(Type type, MeshOp mesh, MeshShardingAttr sharding);
+
+inline int64_t getRankOrZero(Type t) {
+  RankedTensorType rankedTensorType = llvm::dyn_cast<RankedTensorType>(t);
+  if (!rankedTensorType) {
+    return 0;
+  }
+  return rankedTensorType.getRank();
+}
+
+template <typename TypeRange>
+int64_t getTensorAxisCount(TypeRange&& types) {
+  auto rankOrZeroRange = llvm::map_range(std::forward<TypeRange>(types), getRankOrZero);
+  return std::accumulate(rankOrZeroRange.begin(), rankOrZeroRange.end(), 0, std::plus<int64_t>());
+}
 
 } // namespace mesh
 } // namespace mlir
