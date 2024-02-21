@@ -593,7 +593,6 @@ static SmallVector<MeshShardingAttr> getOperandShardings(Operation &op) {
     Operation *definingOp = operand.getDefiningOp();
     assert(definingOp);
     ShardOp shardOp = llvm::cast<ShardOp>(definingOp);
-    assert(shardOp.getAnnotateForUsers());
     return shardOp.getShard();
   });
   return res;
@@ -615,10 +614,49 @@ static SmallVector<MeshShardingAttr> getResultShardings(Operation &op) {
                     assert(result.hasOneUse());
                     Operation *userOp = *result.getUsers().begin();
                     ShardOp shardOp = llvm::cast<ShardOp>(userOp);
-                    assert(!shardOp.getAnnotateForUsers());
                     return shardOp.getShard();
                   });
   return res;
+}
+
+ShardOp getSourceShardOpOrNull(ShardOp targetShardOp) {
+  Operation* srcOp = targetShardOp.getOperand().getDefiningOp();
+  if (!srcOp) {
+    return ShardOp();
+  }
+  ShardOp srcShardOp =
+      llvm::dyn_cast<ShardOp>(targetShardOp.getOperand().getDefiningOp());
+  if (!srcShardOp) {
+    return ShardOp();
+  }
+
+  return srcShardOp;
+}
+
+static LogicalResult
+spmdizeOperation(ShardOp shardOp, IRMapping &spmdizationMap,
+                 SymbolTableCollection &symbolTableCollection,
+                 OpBuilder &builder) {
+  Value targetSpmdValue;
+
+  // Check if 2 shard ops are chained. If not there is no need for resharding
+  // as the source and target shared the same sharding.
+  ShardOp srcShardOp = getSourceShardOpOrNull(shardOp);
+  if (!srcShardOp) {
+    targetSpmdValue = spmdizationMap.lookup(shardOp.getOperand());
+  } else {
+    // Insert resharding.
+    assert(!srcShardOp.getAnnotateForUsers() && shardOp.getAnnotateForUsers());
+    TypedValue<ShapedType> srcSpmdValue =
+        spmdizationMap.lookup(srcShardOp.getOperand())
+            .cast<TypedValue<ShapedType>>();
+    targetSpmdValue = reshard(builder, srcShardOp, shardOp, srcSpmdValue,
+                                    symbolTableCollection);
+  }
+
+  assert(!spmdizationMap.contains(shardOp.getResult()));
+  spmdizationMap.map(shardOp.getResult(), targetSpmdValue);
+  return success();
 }
 
 static LogicalResult
@@ -627,22 +665,7 @@ spmdizeOperation(Operation &op, IRMapping &spmdizationMap,
                  OpBuilder &builder) {
   ShardOp shardOp = llvm::dyn_cast<ShardOp>(op);
   if (shardOp) {
-    if (!shardOp.getAnnotateForUsers()) {
-      return success();
-    }
-
-    // Insert resharding.
-    ShardOp srcShardOp =
-        llvm::cast<ShardOp>(shardOp.getOperand().getDefiningOp());
-    assert(!srcShardOp.getAnnotateForUsers());
-    TypedValue<ShapedType> srcSpmdValue =
-        spmdizationMap.lookup(srcShardOp.getOperand())
-            .cast<TypedValue<ShapedType>>();
-    Value targetSpmdValue = reshard(builder, srcShardOp, shardOp, srcSpmdValue,
-                                    symbolTableCollection);
-    assert(!spmdizationMap.contains(shardOp.getResult()));
-    spmdizationMap.map(shardOp.getResult(), targetSpmdValue);
-    return success();
+    return spmdizeOperation(shardOp, spmdizationMap, symbolTableCollection, builder);
   }
 
   SmallVector<Value> spmdizedOperands;
