@@ -56,6 +56,9 @@ defaultGetShardingOption(Operation *op,
                          ArrayRef<MeshShardingAttr> operandShardings,
                          ArrayRef<MeshShardingAttr> resultShardings);
 
+FailureOr<SmallVector<MeshShardingAttr>>
+defaultGetShardingAnnotations(Operation *op, const ShardingOption &shardingOption);
+
 LogicalResult
 defaultAddShardingAnnotations(Operation *op, OpBuilder &b,
                               const ShardingOption &shardingOption);

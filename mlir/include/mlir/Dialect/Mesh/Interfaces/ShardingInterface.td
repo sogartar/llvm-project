@@ -92,6 +92,22 @@ def ShardingInterface : OpInterface<"ShardingInterface"> {
       >,
       InterfaceMethod<
         /*desc=*/[{
+          Based on a given ShardingOption, get the operand and result
+          operations for the operands and results sharding annotations.
+        }],
+        /*retTy=*/"FailureOr<SmallVector<MeshShardingAttr>>",
+        /*methodName=*/"getShardingAnnotations",
+        /*args=*/(ins
+          "const ShardingOption &":$shardingOption
+        ),
+        /*methodBody=*/"",
+        /*defaultImplementation=*/[{
+          return detail::defaultGetShardingAnnotations(
+            $_op.getOperation(), shardingOption);
+        }]
+      >,
+      InterfaceMethod<
+        /*desc=*/[{
           Based on a given ShardingOption, this method adds `mesh.shard`
           operations for the operands and results that previously lacked
           sharding annotations.

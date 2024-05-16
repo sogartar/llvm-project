@@ -15,6 +15,9 @@
 #include "mlir/IR/Verifier.h"
 #include "mlir/Interfaces/FunctionInterfaces.h"
 #include "mlir/Pass/Pass.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/iterator_range.h"
 #include "llvm/Support/Debug.h"
 #include <vector>
 
@@ -76,6 +79,59 @@ getOrderedPossibleShardingAttrs(ArrayRef<MeshShardingAttr> mustShardings,
 
   dfsCreateShardingAttrs(0);
   return allShardingAttrs;
+}
+
+// From all the sharding options return the one that is most compatible with
+// the sharding annotations of operands and results of the operation.
+// The order of preference is form highest to lowest:
+// 1. No resharding is required (all existing annotations are compatible).
+// 2. No resharding for operands/results that have annotation specifically
+//   targeting this operation. This means
+//   * operands that are the result of `mesh.shard` ops marked with
+//     `annotate_for_users`.
+//   * results that are annotated with `mesh.shard` ops without
+//     `annotate_for_users`.
+// 3. All other cases. Resharding is required for operands/results with
+//   annotation targeting explicitly this operation.
+// size_t preferredShardingOption(Operation *op, const SmallVector<ShardingOption>& shardingOptions) {
+
+// }
+
+template <bool onlyForExplicitAnnotationsForThisOp>
+bool needsResharding(Operation *op, const SmallVector<MeshShardingAttr>& operandAndResultShardings) {
+  size_t operandsCount = op->getOperands().size();
+  auto operandShardings = llvm::make_range(operandAndResultShardings.begin(), operandAndResultShardings.begin() + operandsCount);
+  auto resultShardings = llvm::make_range(operandAndResultShardings.begin() + operandsCount, operandAndResultShardings.end());
+
+  for ( auto [operand, sharding] : llvm::zip_equal(op->getOperands(), operandShardings)) {
+    ShardOp shardOp = llvm::dyn_cast<ShardOp>(operand.getDefiningOp());
+    if (!shardOp) {
+      continue;
+    }
+    if (onlyForExplicitAnnotationsForThisOp && !shardOp.getAnnotateForUsers()) {
+      continue;
+    }
+    if (shardOp.getShardAttr() != sharding) {
+      return true;
+    }
+  }
+
+  for ( auto [result, sharding] : llvm::zip_equal(op->getResults(), resultShardings)) {
+    for (auto user : result.getUsers()) {
+        ShardOp shardOp = llvm::dyn_cast<ShardOp>(user);
+        if (!shardOp) {
+          continue;
+        }
+        if (onlyForExplicitAnnotationsForThisOp && shardOp.getAnnotateForUsers()) {
+          continue;
+        }
+        if (shardOp.getShardAttr() != sharding) {
+          return true;
+        }
+    }
+  }
+
+  return false;
 }
 
 // For each operation that implements the ShardingInterface, infer the sharding

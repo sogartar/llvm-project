@@ -13,6 +13,7 @@
 #include "mlir/IR/AffineMap.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/Support/LLVM.h"
+#include "mlir/Support/LogicalResult.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallSet.h"
@@ -388,13 +389,8 @@ FailureOr<ShardingOption> mesh::detail::defaultGetShardingOption(
   return shardingOption;
 }
 
-//===----------------------------------------------------------------------===//
-// detail::defaultAddShardingAnnotations
-//===----------------------------------------------------------------------===//
-
-// To add a `mesh.shard` op for the given result, based on the details provided
-// in `shardingOption`, `map`, and `loopTypes`.
-static LogicalResult addShardOp(OpBuilder &b, OpResult result,
+// Get the sharding attributed for the given result and sharding option.
+MeshShardingAttr getShardingAttribute(OpResult result,
                                 const ShardingOption &shardingOption,
                                 AffineMap map,
                                 ArrayRef<utils::IteratorType> loopTypes,
@@ -433,16 +429,11 @@ static LogicalResult addShardOp(OpBuilder &b, OpResult result,
   }
 
   removeTrailingEmptySubArray(splitAxes);
-  MeshShardingAttr shardAttr = MeshShardingAttr::get(
-      b.getContext(), shardingOption.mesh, splitAxes, partialAxes, partialType);
-  maybeInsertTargetShardingAnnotation(shardAttr, result, b);
-
-  return success();
+  return MeshShardingAttr::get(
+      result.getContext(), shardingOption.mesh, splitAxes, partialAxes, partialType);
 }
 
-// To add a `mesh.shard` op for the given operand, based on the details provided
-// in `shardingOption`, `map`, and `loopTypes`.
-static LogicalResult addShardOp(OpBuilder &b, OpOperand &opOperand,
+static FailureOr<MeshShardingAttr> getShardingAttribute(OpOperand &opOperand,
                                 const ShardingOption &shardingOption,
                                 AffineMap map) {
   Value operandValue = opOperand.get();
@@ -472,10 +463,73 @@ static LogicalResult addShardOp(OpBuilder &b, OpOperand &opOperand,
   }
 
   removeTrailingEmptySubArray(splitAxes);
-  MeshShardingAttr shardAttr =
-      MeshShardingAttr::get(b.getContext(), shardingOption.mesh, splitAxes);
+  return MeshShardingAttr::get(opOperand.get().getContext(), shardingOption.mesh, splitAxes);
+}
+
+FailureOr<SmallVector<MeshShardingAttr>>
+mesh::detail::defaultGetShardingAnnotations(Operation *op, const ShardingOption &shardingOption) {
+  SmallVector<MeshShardingAttr> res;
+
+  ShardingInterface shardingOp = llvm::cast<ShardingInterface>(op);
+  SmallVector<utils::IteratorType> loopTypes =
+      shardingOp.getLoopIteratorTypes();
+  SmallVector<ReductionKind> reductionKinds =
+      shardingOp.getReductionLoopIteratorKinds();
+  SmallVector<AffineMap> maps = shardingOp.getIndexingMaps();
+  unsigned numOperands = op->getNumOperands();
+
+  for (OpOperand &opOperand : op->getOpOperands()) {
+    FailureOr<MeshShardingAttr> shardingAttr = getShardingAttribute(opOperand, shardingOption,
+                          maps[opOperand.getOperandNumber()]);
+    if (failed(shardingAttr))
+      return failure();
+    res.push_back(*shardingAttr);
+  }
+
+  for (OpResult result : op->getResults()) {
+    res.push_back(getShardingAttribute(result, shardingOption,
+                          maps[numOperands + result.getResultNumber()],
+                          loopTypes, reductionKinds));
+  }
+
+  return res;
+}
+
+//===----------------------------------------------------------------------===//
+// detail::defaultAddShardingAnnotations
+//===----------------------------------------------------------------------===//
+
+// To add a `mesh.shard` op for the given result, based on the details provided
+// in `shardingOption`, `map`, and `loopTypes`.
+static LogicalResult addShardOp(OpBuilder &b, OpResult result,
+                                const ShardingOption &shardingOption,
+                                AffineMap map,
+                                ArrayRef<utils::IteratorType> loopTypes,
+                                ArrayRef<ReductionKind> reductionLoopKinds) {
+  MeshShardingAttr shardAttr = getShardingAttribute(result,
+                                shardingOption,
+                                map,
+                                loopTypes,
+                                reductionLoopKinds);
+  maybeInsertTargetShardingAnnotation(shardAttr, result, b);
+
+  return success();
+}
+
+// To add a `mesh.shard` op for the given operand, based on the details provided
+// in `shardingOption`, `map`, and `loopTypes`.
+static LogicalResult addShardOp(OpBuilder &b, OpOperand &opOperand,
+                                const ShardingOption &shardingOption,
+                                AffineMap map) {
+
+  FailureOr<MeshShardingAttr> shardAttr = getShardingAttribute(opOperand,
+                                shardingOption,
+                                map);
+  if (failed(shardAttr)) {
+    return failure();
+  }
   OpBuilder::InsertionGuard guard(b);
-  maybeInsertSourceShardingAnnotation(shardAttr, opOperand, b);
+  maybeInsertSourceShardingAnnotation(*shardAttr, opOperand, b);
 
   return success();
 }
