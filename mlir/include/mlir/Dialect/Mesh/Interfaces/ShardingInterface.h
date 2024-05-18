@@ -37,6 +37,7 @@ struct ShardingOption {
   ShardingOption() = default;
   ShardingOption(ShardingArray shardingArray, FlatSymbolRefAttr mesh)
       : shardingArray(std::move(shardingArray)), mesh(mesh) {}
+  static ShardingOption makeEmpty() { auto res = ShardingOption(); res.empty = true; return res; }
 };
 
 // This method retrieves the 'MeshShardingAttr' attribute from a given operation

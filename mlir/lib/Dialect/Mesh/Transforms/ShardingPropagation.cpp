@@ -15,10 +15,12 @@
 #include "mlir/IR/Verifier.h"
 #include "mlir/Interfaces/FunctionInterfaces.h"
 #include "mlir/Pass/Pass.h"
+#include "mlir/Support/LogicalResult.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/iterator_range.h"
 #include "llvm/Support/Debug.h"
+#include <algorithm>
 #include <vector>
 
 namespace mlir {
@@ -97,41 +99,100 @@ getOrderedPossibleShardingAttrs(ArrayRef<MeshShardingAttr> mustShardings,
 
 // }
 
-template <bool onlyForExplicitAnnotationsForThisOp>
-bool needsResharding(Operation *op, const SmallVector<MeshShardingAttr>& operandAndResultShardings) {
+enum class ReshardingRquirementKind {
+  NO_RESHARDING = 0,
+  NO_RESHARDING_FOR_EXPLICIT_ANNOTATIONS,
+  RESHARDING_FOR_EXPLICIT_ANNOTATIONS
+};
+
+ReshardingRquirementKind getReshardingRquirementKind(Operation *op, const SmallVector<MeshShardingAttr>& operandAndResultShardings) {
+  ReshardingRquirementKind res = ReshardingRquirementKind::NO_RESHARDING;
+
   size_t operandsCount = op->getOperands().size();
   auto operandShardings = llvm::make_range(operandAndResultShardings.begin(), operandAndResultShardings.begin() + operandsCount);
   auto resultShardings = llvm::make_range(operandAndResultShardings.begin() + operandsCount, operandAndResultShardings.end());
 
   for ( auto [operand, sharding] : llvm::zip_equal(op->getOperands(), operandShardings)) {
-    ShardOp shardOp = llvm::dyn_cast<ShardOp>(operand.getDefiningOp());
+    ShardOp shardOp = llvm::dyn_cast_or_null<ShardOp>(operand.getDefiningOp());
     if (!shardOp) {
       continue;
     }
-    if (onlyForExplicitAnnotationsForThisOp && !shardOp.getAnnotateForUsers()) {
-      continue;
-    }
-    if (shardOp.getShardAttr() != sharding) {
-      return true;
+    bool needsResharding = shardOp.getShardAttr() != sharding;
+    bool isExplicitAnnotationForThisOp = !shardOp.getAnnotateForUsers();
+    if (needsResharding) {
+      if (isExplicitAnnotationForThisOp) {
+        res = ReshardingRquirementKind::RESHARDING_FOR_EXPLICIT_ANNOTATIONS;
+        break;
+      }
+      res = ReshardingRquirementKind::NO_RESHARDING_FOR_EXPLICIT_ANNOTATIONS;
     }
   }
 
   for ( auto [result, sharding] : llvm::zip_equal(op->getResults(), resultShardings)) {
     for (auto user : result.getUsers()) {
-        ShardOp shardOp = llvm::dyn_cast<ShardOp>(user);
-        if (!shardOp) {
-          continue;
+      ShardOp shardOp = llvm::dyn_cast<ShardOp>(user);
+      if (!shardOp) {
+        continue;
+      }
+      bool needsResharding = shardOp.getShardAttr() != sharding;
+      bool isExplicitAnnotationForThisOp = shardOp.getAnnotateForUsers();
+      if (needsResharding) {
+        if (isExplicitAnnotationForThisOp) {
+          res = ReshardingRquirementKind::RESHARDING_FOR_EXPLICIT_ANNOTATIONS;
+          break;
         }
-        if (onlyForExplicitAnnotationsForThisOp && shardOp.getAnnotateForUsers()) {
-          continue;
-        }
-        if (shardOp.getShardAttr() != sharding) {
-          return true;
-        }
+        res = ReshardingRquirementKind::NO_RESHARDING_FOR_EXPLICIT_ANNOTATIONS;
+      }
     }
   }
 
-  return false;
+  return res;
+}
+
+static FailureOr<ShardingOption> selectShardingOption(ShardingInterface shardingOp,
+  ArrayRef<SmallVector<MeshShardingAttr>> possibleOperandShardingAttrs, 
+  ArrayRef<SmallVector<MeshShardingAttr>> possibleResultShardingAttrs) {
+  SmallVector<std::tuple<ShardingOption, ReshardingRquirementKind>> shardingOptionsAndReshardingRequirements;
+
+  for (ArrayRef<MeshShardingAttr> resultShardings :
+       possibleResultShardingAttrs) {
+    for (ArrayRef<MeshShardingAttr> operandShardings :
+         possibleOperandShardingAttrs) {
+      FailureOr<ShardingOption> shardingOption =
+          shardingOp.getShardingOption(operandShardings, resultShardings);
+      if (failed(shardingOption) || shardingOption->empty) {
+        continue;
+      }
+      // These shardings may not be the same as those in operandShardings and
+      // resultShardings.
+      // They may be missing some annotations.
+      // Whatever is returned by getShardingAnnotations is exactly what the op
+      // needs.
+      FailureOr<SmallVector<MeshShardingAttr>> operandAndResultShardings = shardingOp.getShardingAnnotations(*shardingOption);
+      if (failed(operandAndResultShardings)) {
+        return failure();
+      }
+
+      ReshardingRquirementKind reshardingRquirement = getReshardingRquirementKind(shardingOp, *operandAndResultShardings);
+      if (reshardingRquirement == ReshardingRquirementKind::NO_RESHARDING) {
+        // This is the best case. No need to go on.
+        return *shardingOption;
+      }
+
+      shardingOptionsAndReshardingRequirements.emplace_back(std::move(*shardingOption), reshardingRquirement);
+    }
+  }
+
+  if (shardingOptionsAndReshardingRequirements.empty()) {
+    return ShardingOption::makeEmpty();
+  }
+
+  std::partial_sort(shardingOptionsAndReshardingRequirements.begin(), shardingOptionsAndReshardingRequirements.begin() + 1, shardingOptionsAndReshardingRequirements.end(),
+    [](const std::tuple<ShardingOption, ReshardingRquirementKind>& a, const std::tuple<ShardingOption, ReshardingRquirementKind>& b) {
+      return std::get<ReshardingRquirementKind>(a) < std::get<ReshardingRquirementKind>(b);
+  });
+
+  return std::get<ShardingOption>(shardingOptionsAndReshardingRequirements.front());
 }
 
 // For each operation that implements the ShardingInterface, infer the sharding
@@ -192,32 +253,18 @@ static LogicalResult visitOp(Operation *op, OpBuilder &builder) {
   SmallVector<SmallVector<MeshShardingAttr>> possibleResultShardingAttrs =
       getOrderedPossibleShardingAttrs(resultMustShardings,
                                       allowConflictsResultShardings);
-  FailureOr<ShardingOption> finalShardingOption = failure();
-  for (ArrayRef<MeshShardingAttr> resultShardings :
-       possibleResultShardingAttrs) {
-    if (succeeded(finalShardingOption))
-      break;
-    for (ArrayRef<MeshShardingAttr> operandShardings :
-         possibleOperandShardingAttrs) {
-      FailureOr<ShardingOption> shardingOption =
-          shardingOp.getShardingOption(operandShardings, resultShardings);
-      if (succeeded(shardingOption)) {
-        finalShardingOption = shardingOption;
-        break;
-      }
-    }
-  }
+  FailureOr<ShardingOption> shardingOption = selectShardingOption(shardingOp, possibleOperandShardingAttrs, possibleResultShardingAttrs);
 
-  if (failed(finalShardingOption)) {
+  if (failed(shardingOption)) {
     op->emitOpError() << "fail to get sharding option.";
     return failure();
   }
   // sharding info is empty, return immediately
-  if (finalShardingOption->empty)
+  if (shardingOption->empty)
     return success();
 
   if (failed(
-          shardingOp.addShardingAnnotations(builder, *finalShardingOption))) {
+          shardingOp.addShardingAnnotations(builder, *shardingOption))) {
     op->emitOpError() << "fail to set sharding annotations.";
     return failure();
   }

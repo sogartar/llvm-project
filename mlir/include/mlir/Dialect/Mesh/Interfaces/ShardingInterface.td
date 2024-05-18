@@ -75,8 +75,11 @@ def ShardingInterface : OpInterface<"ShardingInterface"> {
       InterfaceMethod<
         /*desc=*/[{
           Given that certain operands or results of the operation may have
-          sharding annotations, this method leverages this information to deduce
-          how the operation should be sharded.
+          sharding annotations, this method leverages this information to
+          deduce how the operation should be sharded.
+          The passed sharding may be incomplete, this gives freedom for the
+          op to select the most appropriate shardings for all the operands
+          and results and the op itself.
         }],
         /*retTy=*/"FailureOr<ShardingOption>",
         /*methodName=*/"getShardingOption",
@@ -94,6 +97,8 @@ def ShardingInterface : OpInterface<"ShardingInterface"> {
         /*desc=*/[{
           Based on a given ShardingOption, get the operand and result
           operations for the operands and results sharding annotations.
+          This is what shardings the operands and results need to have in order
+          to shard the op according to shardingOption.
         }],
         /*retTy=*/"FailureOr<SmallVector<MeshShardingAttr>>",
         /*methodName=*/"getShardingAnnotations",

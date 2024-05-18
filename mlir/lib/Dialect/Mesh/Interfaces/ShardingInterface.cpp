@@ -536,6 +536,8 @@ static LogicalResult addShardOp(OpBuilder &b, OpOperand &opOperand,
 
 LogicalResult mesh::detail::defaultAddShardingAnnotations(
     Operation *op, OpBuilder &b, const ShardingOption &shardingOption) {
+  assert(!shardingOption.empty && shardingOption.mesh);
+  
   ShardingInterface shardingOp = llvm::cast<ShardingInterface>(op);
   SmallVector<utils::IteratorType> loopTypes =
       shardingOp.getLoopIteratorTypes();
